@@ -79,3 +79,5 @@ Frontend runs on: http://localhost:3000
 - **Frontend**: React 18, Axios
 - **Backend**: Node.js, Express, Multer, Google Generative AI
 - **AI**: Google Gemini 1.5 Flash
+
+###Live Demo : https://brd-agent-hackfest-2-0-hackethon-project-z9pa.onrender.com
