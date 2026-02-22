@@ -1,0 +1,17 @@
+{
+  "name": "brd-intelligence-agent",
+  "version": "1.0.0",
+  "description": "Full-stack BRD Intelligence Agent application",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "scripts": {
+    "start": "cd backend && npm start",
+    "install-backend": "cd backend && npm install",
+    "install-frontend": "cd frontend && npm install",
+    "build-frontend": "cd frontend && npm run build",
+    "build": "npm run install-backend && npm run install-frontend && npm run build-frontend"
+  },
+  "author": "",
+  "license": "ISC"
+}

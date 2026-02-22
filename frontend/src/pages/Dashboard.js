@@ -113,7 +113,7 @@ export default function Dashboard({ setActivePage }) {
       <div className="dash-activity-card">
         <div className="card-header" style={{ marginBottom: 24 }}>
           <div className="card-title">Recent Activity</div>
-          <button className="icon-btn"><i className="ri-add-line"></i></button>
+          <button className="btn btn-primary btn-sm"><i className="ri-add-line"></i> New BRD</button>
         </div>
         <table className="activity-table">
           <thead>
@@ -126,19 +126,22 @@ export default function Dashboard({ setActivePage }) {
             </tr>
           </thead>
           <tbody>
-            {data.recentActivity.map((item, i) => (
-              <tr key={i}>
-                <td style={{ color: 'var(--text-muted)' }}>{item.id}</td>
-                <td style={{ color: 'var(--text-main)', fontWeight: 600 }}>{item.project}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{item.date}</td>
-                <td>
-                  <span className={`status-pill status-${item.status.toLowerCase().replace(' ', '-')}`}>
-                    {item.status}
-                  </span>
-                </td>
-                <td style={{ color: 'var(--text-main)' }}>{item.owner}</td>
-              </tr>
-            ))}
+            {data.recentActivity.map((item, i) => {
+              const statusClass = item.status.toLowerCase().replace(' ', '-');
+              return (
+                <tr key={i}>
+                  <td style={{ color: 'var(--text-muted)' }}>{item.id}</td>
+                  <td style={{ color: 'var(--text-main)', fontWeight: 600 }}>{item.project}</td>
+                  <td style={{ color: 'var(--text-muted)' }}>{item.date}</td>
+                  <td>
+                    <span className={`status-badge ${statusClass}`}>
+                      {item.status}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--text-main)' }}>{item.owner}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

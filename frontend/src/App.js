@@ -7,12 +7,15 @@ import Insights from './pages/Insights';
 import GeneratedBRDs from './pages/GeneratedBRDs';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Team from './pages/Team';
+import Settings from './pages/Settings';
 
 export default function App() {
   const [auth, setAuth] = useState(null);
   const [activePage, setActivePage] = useState('Dashboard');
   const [analysisState, setAnalysisState] = useState(null);
   const [currentBrdId, setCurrentBrdId] = useState(null);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -63,6 +66,10 @@ export default function App() {
         return <GeneratedBRDs activeBrdId={currentBrdId} />;
       case 'Insights':
         return <Insights brdId={currentBrdId} />;
+      case 'Team':
+        return <Team />;
+      case 'Settings':
+        return <Settings />;
       default:
         return <Dashboard setActivePage={navPage} />;
     }
@@ -89,10 +96,38 @@ export default function App() {
           <div className="topbar-right">
             <div className="topbar-icon"><i className="ri-mail-line"></i></div>
             <div className="topbar-icon"><i className="ri-notification-3-line"></i></div>
-            <div className="user-profile">
-              <div className="user-avatar">{auth ? auth.name[0].toUpperCase() : 'U'}</div>
-              <div className="user-name" style={{ marginLeft: 8, fontSize: 13, fontWeight: 600 }}>{auth ? auth.name : 'User'}</div>
-              <i className="ri-arrow-down-s-line" style={{ color: 'var(--text-muted)', marginLeft: 8 }}></i>
+            <div className="user-profile-container" style={{ position: 'relative' }}>
+              <div className="user-profile" onClick={() => setShowProfileDropdown(!showProfileDropdown)}>
+                <div className="user-avatar">{auth ? auth.name[0].toUpperCase() : 'U'}</div>
+                <div className="user-name" style={{ marginLeft: 8, fontSize: 13, fontWeight: 600 }}>{auth ? auth.name : 'User'}</div>
+                <i className={`ri-arrow-${showProfileDropdown ? 'up' : 'down'}-s-line`} style={{ color: 'var(--text-muted)', marginLeft: 8 }}></i>
+              </div>
+
+              {showProfileDropdown && (
+                <>
+                  <div className="dropdown-overlay" onClick={() => setShowProfileDropdown(false)}></div>
+                  <div className="profile-dropdown glass-dark">
+                    <div className="dropdown-header">
+                      <div className="user-avatar">{auth ? auth.name[0].toUpperCase() : 'U'}</div>
+                      <div className="dropdown-user-info">
+                        <strong>{auth ? auth.name : 'User'}</strong>
+                        <span>{auth ? auth.email : 'user@company.com'}</span>
+                      </div>
+                    </div>
+                    <div className="dropdown-divider"></div>
+                    <button className="dropdown-item" onClick={() => { setActivePage('Settings'); setShowProfileDropdown(false); }}>
+                      <i className="ri-user-settings-line"></i> Profile
+                    </button>
+                    <button className="dropdown-item" onClick={() => { setActivePage('Settings'); setShowProfileDropdown(false); }}>
+                      <i className="ri-settings-4-line"></i> Settings
+                    </button>
+                    <div className="dropdown-divider"></div>
+                    <button className="dropdown-item text-error" onClick={() => { handleLogout(); setShowProfileDropdown(false); }}>
+                      <i className="ri-logout-box-r-line"></i> Log out
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </header>

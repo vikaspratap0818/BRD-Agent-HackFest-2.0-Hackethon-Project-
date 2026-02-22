@@ -9,9 +9,14 @@ const channels = [
 ];
 
 export default function UploadData({ onAnalysisStart }) {
-  const [activeChannel, setActiveChannel] = useState('email');
+  const [activeChannel, setActiveChannel] = useState('meeting');
+  const [inputType, setInputType] = useState('file'); // 'file', 'text', 'url'
   const [dragOver, setDragOver] = useState(false);
+  
   const [file, setFile] = useState(null);
+  const [textData, setTextData] = useState('');
+  const [urlData, setUrlData] = useState('');
+  
   const [autoLang, setAutoLang] = useState(true);
   const [channelTag, setChannelTag] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -21,6 +26,7 @@ export default function UploadData({ onAnalysisStart }) {
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
+    if (inputType !== 'file') return;
     const f = e.dataTransfer.files[0];
     if (f) setFile(f);
   };
@@ -30,25 +36,55 @@ export default function UploadData({ onAnalysisStart }) {
   };
 
   const handleAnalyze = async () => {
-    if (!file) { setError('Please select a file first.'); return; }
+    if (inputType === 'file' && !file) { setError('Please select a file first.'); return; }
+    if (inputType === 'text' && !textData.trim()) { setError('Please enter some text.'); return; }
+    if (inputType === 'url' && !urlData.trim()) { setError('Please enter a valid URL.'); return; }
+    
     setError('');
     setLoading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('channel', activeChannel);
-      fd.append('autoLanguage', autoLang);
-      fd.append('channelTagging', channelTag);
+      let uploadRes;
+      let displayFileName;
 
-      const uploadRes = await uploadFile(fd);
-      const { fileId } = uploadRes.data;
+      if (inputType === 'file') {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('channel', activeChannel);
+        fd.append('autoLanguage', autoLang);
+        fd.append('channelTagging', channelTag);
+        fd.append('inputType', inputType);
+        uploadRes = await uploadFile(fd);
+        displayFileName = file.name;
+      } else {
+        // Send as JSON for text/url
+        const payload = {
+          inputType,
+          channel: activeChannel,
+          autoLanguage: autoLang,
+          channelTagging: channelTag,
+          textData: inputType === 'text' ? textData : undefined,
+          urlData: inputType === 'url' ? urlData : undefined
+        };
+        
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        uploadRes = { data: await res.json() };
+        if (!res.ok) throw new Error(uploadRes.data.error || 'Upload failed');
+        displayFileName = inputType === 'text' ? 'Pasted Text Snippet' : urlData;
+      }
+
+      const { fileId, fileName } = uploadRes.data;
 
       const analysisRes = await startAnalysis(fileId);
       const { analysisId, steps } = analysisRes.data;
 
-      onAnalysisStart({ analysisId, steps, fileName: file.name });
+      onAnalysisStart({ analysisId, steps, fileName: fileName || displayFileName });
     } catch (err) {
-      setError(err.response?.data?.error || 'Upload failed. Make sure the backend is running.');
+      setError(err.response?.data?.error || err.message || 'Processing failed. Make sure the backend is running.');
     } finally {
       setLoading(false);
     }
@@ -74,40 +110,88 @@ export default function UploadData({ onAnalysisStart }) {
               ))}
             </div>
 
-            {/* Upload zone */}
+            {/* Input area */}
             <div className="upload-zone-area">
-              <div
-                className={`dropzone ${dragOver ? 'drag-over' : ''}`}
-                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current.click()}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  style={{ display: 'none' }}
-                  accept=".txt,.pdf,.docx,.csv"
-                  onChange={handleFileInput}
-                />
-                <div className="dropzone-icon"><i className="ri-upload-cloud-2-line"></i></div>
-                <div className="dropzone-text">
-                  Drop files here or <span className="dropzone-link">Browse Files</span>
-                </div>
-                <div className="dropzone-sub">Supported: .txt, .pdf, .docx, .csv</div>
+              
+              <div className="tabs" style={{ marginBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                <button className={`tab-btn ${inputType === 'file' ? 'active' : ''}`} onClick={() => setInputType('file')}>
+                  <i className="ri-file-upload-line" style={{marginRight: 6}}></i> File Upload
+                </button>
+                <button className={`tab-btn ${inputType === 'text' ? 'active' : ''}`} onClick={() => setInputType('text')}>
+                  <i className="ri-text" style={{marginRight: 6}}></i> Paste Text
+                </button>
+                <button className={`tab-btn ${inputType === 'url' ? 'active' : ''}`} onClick={() => setInputType('url')}>
+                  <i className="ri-link" style={{marginRight: 6}}></i> Meeting URL
+                </button>
               </div>
 
-              {file && (
-                <div className="file-attached">
-                  <i className="ri-attachment-2"></i> {file.name}
-                  <button
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}
-                    onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                  >✕</button>
+              {inputType === 'file' && (
+                <>
+                  <div
+                    className={`dropzone ${dragOver ? 'drag-over' : ''}`}
+                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      style={{ display: 'none' }}
+                      accept=".txt,.pdf,.docx,.csv"
+                      onChange={handleFileInput}
+                    />
+                    <div className="dropzone-icon"><i className="ri-upload-cloud-2-line"></i></div>
+                    <div className="dropzone-text">
+                      Drop files here or <span className="dropzone-link">Browse Files</span>
+                    </div>
+                    <div className="dropzone-sub">Supported: .txt, .pdf, .docx, .csv</div>
+                  </div>
+
+                  {file && (
+                    <div className="file-attached">
+                      <i className="ri-attachment-2"></i> {file.name}
+                      <button
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}
+                        onClick={(e) => { e.stopPropagation(); setFile(null); }}
+                      >✕</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {inputType === 'text' && (
+                <div className="form-group" style={{ flex: 1 }}>
+                  <textarea 
+                    className="form-control" 
+                    style={{ flex: 1, minHeight: '200px', resize: 'vertical' }}
+                    placeholder="Paste your meeting transcript, chat history, or raw requirements text here..."
+                    value={textData}
+                    onChange={e => setTextData(e.target.value)}
+                  />
                 </div>
               )}
 
-              <div className="toggle-row">
+              {inputType === 'url' && (
+                <div className="form-group">
+                  <label>Meeting or Document URL</label>
+                  <div className="input-with-icon">
+                    <i className="ri-link"></i>
+                    <input 
+                      type="url" 
+                      className="form-control"
+                      placeholder="https://zoom.us/rec/play/... or Google Docs URL" 
+                      value={urlData}
+                      onChange={e => setUrlData(e.target.value)}
+                    />
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    The AI will attempt to fetch and transcribe the content from the provided URL.
+                  </p>
+                </div>
+              )}
+
+              <div className="toggle-row mt-4">
                 <button className={`toggle ${autoLang ? 'on' : ''}`} onClick={() => setAutoLang(!autoLang)} />
                 <span>Auto language detection</span>
                 <span className="info-icon" title="Automatically detect the language of the uploaded content"><i className="ri-information-line"></i></span>
@@ -120,12 +204,12 @@ export default function UploadData({ onAnalysisStart }) {
               </div>
 
               {error && (
-                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '10px 14px', borderRadius: 8, fontSize: 13 }}>
+                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginTop: '12px' }}>
                   ⚠️ {error}
                 </div>
               )}
 
-              <button className="btn btn-accent" onClick={handleAnalyze} disabled={loading}>
+              <button className="btn btn-accent" style={{ marginTop: '16px' }} onClick={handleAnalyze} disabled={loading}>
                 {loading ? <><i className="ri-loader-4-line ri-spin"></i> Processing...</> : <><i className="ri-rocket-line"></i> Start AI Analysis</>}
               </button>
             </div>

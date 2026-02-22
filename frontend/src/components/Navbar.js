@@ -41,12 +41,18 @@ export default function Navbar({ activePage, setActivePage, user, onLogout }) {
         ))}
         {/* Mock Links for visuals based on design image */}
         <li>
-          <button className="nav-link">
+          <button 
+            className={`nav-link ${activePage === 'Team' ? "active" : ""}`}
+            onClick={() => setActivePage('Team')}
+          >
             <i className="ri-team-line"></i> Team
           </button>
         </li>
         <li>
-          <button className="nav-link">
+          <button 
+            className={`nav-link ${activePage === 'Settings' ? "active" : ""}`}
+            onClick={() => setActivePage('Settings')}
+          >
             <i className="ri-settings-4-line"></i> Settings
           </button>
         </li>

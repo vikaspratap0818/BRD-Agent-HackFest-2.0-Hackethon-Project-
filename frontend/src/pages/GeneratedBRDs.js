@@ -42,10 +42,11 @@ export default function GeneratedBRDs({ activeBrdId }) {
       <>
         <div className="page-header">
           <button
+            className="btn btn-secondary btn-sm"
             onClick={() => setSelectedBrd(null)}
-            style={{ background: 'none', border: 'none', color: 'white', fontSize: 13, cursor: 'pointer', marginBottom: 8, padding: 0 }}
+            style={{ marginBottom: 16 }}
           >
-            ← Back to BRDs
+            <i className="ri-arrow-left-line"></i> Back to BRDs
           </button>
           <h1>Automated BRD Generation</h1>
         </div>

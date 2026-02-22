@@ -14,6 +14,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Serve Static Frontend (for production)
+app.use(express.static(path.join(__dirname, '../frontend/build')));
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -105,52 +108,64 @@ app.get('/api/dashboard', (req, res) => {
 // Upload & analyze file
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-    const { channel = 'email', autoLanguage = true, channelTagging = false } = req.body;
+    const { channel = 'email', autoLanguage = true, channelTagging = false, inputType = 'file', textData, urlData } = req.body;
     const fileId = uuidv4();
     let fileContent = '';
+    let fileName = 'Input Data';
 
-    // Read file content
-    const filePath = req.file.path;
-    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (inputType === 'file') {
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      fileName = req.file.originalname;
+      const filePath = req.file.path;
+      const ext = path.extname(req.file.originalname).toLowerCase();
 
-    if (ext === '.txt' || ext === '.csv') {
-      fileContent = fs.readFileSync(filePath, 'utf-8');
-    } else if (ext === '.pdf') {
-      try {
-        const pdfParse = require('pdf-parse');
-        const dataBuffer = fs.readFileSync(filePath);
-        const pdfData = await pdfParse(dataBuffer);
-        fileContent = pdfData.text;
-      } catch (e) {
-        fileContent = 'PDF content extracted (text extraction failed, using filename)';
+      if (ext === '.txt' || ext === '.csv') {
+        fileContent = fs.readFileSync(filePath, 'utf-8');
+      } else if (ext === '.pdf') {
+        try {
+          const pdfParse = require('pdf-parse');
+          const dataBuffer = fs.readFileSync(filePath);
+          const pdfData = await pdfParse(dataBuffer);
+          fileContent = pdfData.text;
+        } catch (e) {
+          fileContent = 'PDF content extracted (text extraction failed, using filename)';
+        }
+      } else if (ext === '.docx') {
+        try {
+          const mammoth = require('mammoth');
+          const result = await mammoth.extractRawText({ path: filePath });
+          fileContent = result.value;
+        } catch (e) {
+          fileContent = 'DOCX content extracted';
+        }
       }
-    } else if (ext === '.docx') {
-      try {
-        const mammoth = require('mammoth');
-        const result = await mammoth.extractRawText({ path: filePath });
-        fileContent = result.value;
-      } catch (e) {
-        fileContent = 'DOCX content extracted';
-      }
+    } else if (inputType === 'text') {
+      if (!textData) return res.status(400).json({ error: 'No text provided' });
+      fileContent = textData;
+      fileName = 'Pasted Text Snippet';
+    } else if (inputType === 'url') {
+      if (!urlData) return res.status(400).json({ error: 'No URL provided' });
+      fileName = urlData;
+      // Mock fetching transcript from URL
+      fileContent = `[Transcript fetched from ${urlData}]\n\nMeeting Started.\nHost: Welcome everyone to the architecture review.\nAttendee: We need to ensure we discuss the new backend requirements today.\nHost: Yes, primarily we need real-time data ingestion and RAG capabilities using Gemini.\nAttendee: Priority is high for the RAG feature. We also need to guarantee 99.9% uptime as a non-functional requirement.`;
     }
 
     // Store upload info
     projectsStore[fileId] = {
       id: fileId,
-      fileName: req.file.originalname,
+      fileName,
       channel,
-      fileContent: fileContent.substring(0, 5000), // limit
+      inputType,
+      fileContent: fileContent.substring(0, 15000), // bump limit slightly for transcripts
       uploadedAt: new Date().toISOString()
     };
 
     res.json({
       success: true,
       fileId,
-      fileName: req.file.originalname,
+      fileName,
       channel,
-      message: 'File uploaded successfully. Ready for AI analysis.'
+      message: 'Data uploaded successfully. Ready for AI analysis.'
     });
 
   } catch (error) {
@@ -185,6 +200,18 @@ app.post('/api/analyze/:fileId', async (req, res) => {
   }
 });
 
+// Helper function to split text into chunks
+function chunkText(text, chunkSize = 1000, overlap = 200) {
+  if (!text) return [];
+  const chunks = [];
+  let i = 0;
+  while (i < text.length) {
+    chunks.push(text.substring(i, i + chunkSize));
+    i += chunkSize - overlap;
+  }
+  return chunks;
+}
+
 // Analysis status polling
 const analysisStore = {};
 async function runAnalysis(analysisId, project, steps) {
@@ -195,8 +222,28 @@ async function runAnalysis(analysisId, project, steps) {
     analysisStore[analysisId].completedSteps.push(steps[i]);
     analysisStore[analysisId].confidence = Math.round(((i + 1) / steps.length) * 92);
   }
+  
+  // 1. GENERATE RAG EMBEDDINGS
+  let documentChunks = [];
+  try {
+    const rawChunks = chunkText(project.fileContent || '', 1000, 200);
+    const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+    
+    // Embed chunks
+    for (const chunk of rawChunks) {
+      if (chunk.trim().length === 0) continue;
+      const result = await embeddingModel.embedContent(chunk);
+      documentChunks.push({
+        text: chunk,
+        embedding: result.embedding.values
+      });
+    }
+  } catch (err) {
+    console.error('Embedding Generation Error:', err);
+    // Continue even if embeddings fail temporarily
+  }
 
-  // Generate insights via Gemini
+  // 2. GENERATE INSIGHTS
   try {
     const prompt = `You are a Business Requirements Document expert. Analyze the following communication and extract structured requirements.
 
@@ -249,10 +296,11 @@ Return ONLY the JSON, no markdown.`;
       fileId: project.id,
       fileName: project.fileName,
       insights,
+      documentChunks, // Store chunks for RAG chat
       brdContent: await generateBRDContent(insights),
       createdAt: new Date().toISOString(),
       risks: Math.floor(Math.random() * 5) + 8,
-      type: 'generated'
+      type: project.inputType === 'url' ? 'meeting' : 'upload'
     };
 
     analysisStore[analysisId].status = 'complete';
@@ -267,9 +315,11 @@ Return ONLY the JSON, no markdown.`;
       fileId: project.id,
       fileName: project.fileName,
       insights: fallback,
+      documentChunks, // Store chunks for RAG chat
       brdContent: await generateBRDContent(fallback),
       createdAt: new Date().toISOString(),
-      risks: 13
+      risks: 13,
+      type: project.inputType === 'url' ? 'meeting' : 'upload'
     };
     analysisStore[analysisId].status = 'complete';
     analysisStore[analysisId].brdId = brdId;
@@ -301,6 +351,20 @@ app.get('/api/brds', (req, res) => {
   res.json(Object.values(brdsStore));
 });
 
+// Compute cosine similarity between two vectors
+function cosineSimilarity(vecA, vecB) {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 // Chat with Gemini about a BRD
 app.post('/api/brd/:brdId/chat', async (req, res) => {
   try {
@@ -308,12 +372,39 @@ app.post('/api/brd/:brdId/chat', async (req, res) => {
     const { message } = req.body;
     if (!brd || !message) return res.status(400).json({ error: 'Missing brd or message' });
 
-    const prompt = `You are a BRD expert assistant. Here is the BRD context:
-${JSON.stringify(brd.insights, null, 2)}
+    let contextText = JSON.stringify(brd.insights, null, 2);
+
+    // 1. PERFORM RAG VECTOR SEARCH
+    if (brd.documentChunks && brd.documentChunks.length > 0) {
+      try {
+        const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const queryEmbedding = await embeddingModel.embedContent(message);
+        const qVec = queryEmbedding.embedding.values;
+
+        // Score all chunks
+        const scoredChunks = brd.documentChunks.map(chunk => ({
+          text: chunk.text,
+          score: cosineSimilarity(qVec, chunk.embedding)
+        }));
+
+        // Sort by highest similarity
+        scoredChunks.sort((a, b) => b.score - a.score);
+
+        // Take Top 3 most relevant chunks
+        const topChunks = scoredChunks.slice(0, 3).map(c => c.text).join('\n\n---\n\n');
+        
+        contextText = `[RELEVANT EXTRACTED DOCUMENT SEGMENTS]\n${topChunks}\n\n[HIGH LEVEL DOCUMENT INSIGHTS]\n${contextText}`;
+      } catch (e) {
+        console.error("Vector search failed, falling back to basic context:", e);
+      }
+    }
+
+    const prompt = `You are a BRD expert assistant. Here is the context of the document and specific most relevant chunks:
+${contextText}
 
 User question: ${message}
 
-Answer concisely and helpfully.`;
+Answer concisely and helpfully based primarily on the context provided above. If the context doesn't mention something, state that.`;
 
     const result = await model.generateContent(prompt);
     res.json({ reply: result.response.text() });
@@ -410,6 +501,10 @@ function generateFallbackInsights() {
   };
 }
 
+// Serve React App for any unknown route
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
+});
 app.listen(PORT, () => {
   console.log(`🚀 BRD Intelligence Agent Backend running on http://localhost:${PORT}`);
   console.log(`📋 API Endpoints:`);
